@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>맛의명태자 촬영 타이머</title>
+<style>
+  body { font-family: 'Noto Sans KR', sans-serif; background: #f8f9fa; color: #333; padding: 20px; }
+  h1 { text-align: center; margin-bottom: 30px; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+  th, td { padding: 10px 12px; border: 1px solid #ddd; text-align: center; vertical-align: top; white-space: pre-line; }
+  th { background-color: #37474f; color: #fff; }
+  tr.active { background-color: #c8e6c9; font-weight: bold; }
+  #timer { font-size: 48px; text-align: center; margin: 30px 0; color: #ff5722; }
+  #totalTime { text-align: center; font-weight: bold; margin-bottom: 20px; }
+  button { padding: 10px 20px; font-size: 16px; margin: 5px; cursor: pointer; border: none; border-radius: 5px; }
+  button#prev { background-color: #90a4ae; color: white; }
+  button#next { background-color: #4caf50; color: white; }
+  button.edit { background-color: #ff9800; color: white; }
+  button#pause, button#resume { background-color: #2196f3; color: white; }
+  button#reset { background-color: #f44336; color: white; }
+  .progress-container { width: 100%; background-color: #ddd; border-radius: 10px; overflow: hidden; margin: 20px 0; height: 25px; }
+  .progress-bar { height: 100%; width: 0%; background-color: #4caf50; text-align: center; color: white; line-height: 25px; transition: width 0.5s; }
+</style>
+</head>
+<body>
+
+<h1>📸 맛의명태자 촬영 타이머</h1>
+<div id="totalTime">총 경과 시간: 00:00</div>
+<div id="progress">1 / 8</div>
+<div class="progress-container">
+  <div id="progressBar" class="progress-bar">0%</div>
+</div>
+<table id="cutTable">
+  <thead>
+    <tr>
+      <th>순번</th>
+      <th>촬영 항목</th>
+      <th>시간 (분)</th>
+      <th>남은 시간</th>
+      <th>시작 시간</th>
+      <th>종료 시간</th>
+      <th>수정</th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+</table>
+<div style="text-align:center;">
+  <button id="prev">◀ 이전 컷</button>
+  <button id="pause">⏸ 정지</button>
+  <button id="resume" style="display:none">▶ 재시작</button>
+  <button id="reset">⏹ 리셋</button>
+  <button id="next">다음 컷 ▶</button>
+</div>
+<div id="timer">00:00</div>
+<audio id="alarm" src="https://actions.google.com/sounds/v1/alarms/beep_short.ogg"></audio>
+<script>
+const cuts = [
+  { id: 1, name: "세팅 및 준비", time: 30 },
+  { id: 2, name: `원물컷 탑뷰 & 재료컷 탑뷰
+
+📌 탑뷰컷 먼저촬영(모두미리세팅)
+[원물컷 탑뷰]
+- 원물컷1탑뷰
+- 원물컷9탑뷰
+- 원물컷11탑뷰
+
+[재료컷 탑뷰]
+- 명란오두비(온명란)
+- 명란순두부(자른명란)
+- 삼각김밥+명란(짜먹는명란)
+- 구운명란야채모음(더바로구워먹는명란)
+- 명란김밥(온명란+실속명란)`, time: 60 },
+  { id: 3, name: `정면컷 + GIF
+
+[원물컷 정면]
+- 원물Gif1➡️원물컷2정면
+- 원물컷 16정면
+
+[요리컷 정면]
+- 구운명랸야채모음
+  요리Gif1정면클로즈업 오븐에 구워지는 영상`, time: 60 },
+  { id: 4, name: `원물 반측면 컷
+
+- 원물컷6
+- 원물컷7
+- 원물컷8`, time: 20 },
+  { id: 5, name: "점심", time: 60 },
+  { id: 6, name: `원물 반측면 클로즈업 + GIF
+
+- 원물Gif2➡️원물컷3
+- 원물Gif3➡️원물컷4
+- 원물Gif5➡️원물컷10
+- 원물Gif6➡️원물컷12
+- 원물Gif7➡️원물컷13
+- 원물Gif8➡️원물컷14
+- 원물Gif9➡️원물컷15
+- 원물컷17`, time: 120 },
+  { id: 7, name: `요리 반측면 클로즈업 + GIF
+
+- 명란오두비
+- 명란순두부
+- 삼각김밥+명란
+- 구운명란야채모음
+- 명란김밥`, time: 120 },
+  { id: 8, name: "전체 요리 플레이팅", time: 60 }
+];
+
+let currentCutIndex = 0;
+let remainingSeconds = cuts[0].time * 60;
+let timerInterval = null;
+let totalElapsed = 0;
+let isPaused = false;
+
+const cutTableBody = document.querySelector("#cutTable tbody");
+const timerDisplay = document.getElementById("timer");
+const progressDisplay = document.getElementById("progress");
+const totalTimeDisplay = document.getElementById("totalTime");
+const progressBar = document.getElementById("progressBar");
+const alarm = document.getElementById("alarm");
+
+function formatTime(seconds) {
+  const m = Math.floor(seconds / 60).toString().padStart(2, "0");
+  const s = (seconds % 60).toString().padStart(2, "0");
+  return `${m}:${s}`;
+}
+
+function renderTable() {
+  cutTableBody.innerHTML = "";
+  cuts.forEach((cut, idx) => {
+    const tr = document.createElement("tr");
+    tr.classList.toggle("active", idx === currentCutIndex);
+    const startTime = cut.startTime || "-";
+    const endTime = cut.endTime || "-";
+    tr.innerHTML = `
+      <td>${cut.id}</td>
+      <td>${cut.name}</td>
+      <td><input type="number" value="${cut.time}" onchange="updateTime(${idx}, this.value)" style="width:50px;" /></td>
+      <td id="remain-${cut.id}">${idx === currentCutIndex ? formatTime(remainingSeconds) : formatTime(cut.time * 60)}</td>
+      <td>${startTime}</td>
+      <td>${endTime}</td>
+      <td><button class="edit" onclick="editName(${idx})">수정</button></td>
+    `;
+    cutTableBody.appendChild(tr);
+  });
+  progressDisplay.textContent = `${currentCutIndex + 1} / ${cuts.length}`;
+  totalTimeDisplay.textContent = `총 경과 시간: ${formatTime(totalElapsed)}`;
+}
+
+function updateProgressBar() {
+  const totalTime = cuts[currentCutIndex].time * 60;
+  const percent = Math.floor(((totalTime - remainingSeconds) / totalTime) * 100);
+  progressBar.style.width = `${percent}%`;
+  progressBar.textContent = `${percent}%`;
+}
+
+function startTimer() {
+  clearInterval(timerInterval);
+  if (!cuts[currentCutIndex].startTime) {
+    cuts[currentCutIndex].startTime = new Date().toLocaleTimeString();
+  }
+  timerInterval = setInterval(() => {
+    if (!isPaused && remainingSeconds > 0) {
+      remainingSeconds--;
+      totalElapsed++;
+      timerDisplay.textContent = formatTime(remainingSeconds);
+      document.getElementById(`remain-${cuts[currentCutIndex].id}`).textContent = formatTime(remainingSeconds);
+      totalTimeDisplay.textContent = `총 경과 시간: ${formatTime(totalElapsed)}`;
+      updateProgressBar();
+    } else if (!isPaused && remainingSeconds === 0) {
+      clearInterval(timerInterval);
+      cuts[currentCutIndex].endTime = new Date().toLocaleTimeString();
+      alarm.play();
+      alert(`⏰ [${cuts[currentCutIndex].name}] 시간이 종료되었습니다!`);
+      renderTable();
+    }
+  }, 1000);
+}
+
+function updateTime(index, newValue) {
+  cuts[index].time = parseInt(newValue);
+  if (index === currentCutIndex) {
+    remainingSeconds = cuts[currentCutIndex].time * 60;
+    timerDisplay.textContent = formatTime(remainingSeconds);
+    updateProgressBar();
+  }
+  renderTable();
+}
+
+function editName(index) {
+  const newName = prompt("새 촬영 항목 이름을 입력하세요:", cuts[index].name);
+  if (newName) {
+    cuts[index].name = newName;
+    renderTable();
+  }
+}
+
+function changeCut(direction) {
+  clearInterval(timerInterval);
+  if (direction === "next" && currentCutIndex < cuts.length - 1) {
+    cuts[currentCutIndex].endTime = new Date().toLocaleTimeString();
+    currentCutIndex++;
+  } else if (direction === "prev" && currentCutIndex > 0) {
+    currentCutIndex--;
+  }
+  remainingSeconds = cuts[currentCutIndex].time * 60;
+  renderTable();
+  timerDisplay.textContent = formatTime(remainingSeconds);
+  updateProgressBar();
+  startTimer();
+}
+
+document.getElementById("prev").addEventListener("click", () => changeCut("prev"));
+document.getElementById("next").addEventListener("click", () => changeCut("next"));
+document.getElementById("pause").addEventListener("click", () => {
+  isPaused = true;
+  document.getElementById("pause").style.display = "none";
+  document.getElementById("resume").style.display = "inline-block";
+});
+document.getElementById("resume").addEventListener("click", () => {
+  isPaused = false;
+  document.getElementById("resume").style.display = "none";
+  document.getElementById("pause").style.display = "inline-block";
+});
+document.getElementById("reset").addEventListener("click", () => {
+  clearInterval(timerInterval);
+  remainingSeconds = cuts[currentCutIndex].time * 60;
+  timerDisplay.textContent = formatTime(remainingSeconds);
+  document.getElementById(`remain-${cuts[currentCutIndex].id}`).textContent = formatTime(remainingSeconds);
+  updateProgressBar();
+  if (!isPaused) {
+    startTimer();
+  }
+});
+
+renderTable();
+timerDisplay.textContent = formatTime(remainingSeconds);
+updateProgressBar();
+startTimer();
+</script>
+</body>
+</html>
